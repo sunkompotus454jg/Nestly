@@ -59,11 +59,115 @@ class UIManager:
         self.profiles_menu.addAction(create_action)
 
     def prompt_create_profile(self):
-        from PyQt6.QtWidgets import QInputDialog
-        name, ok = QInputDialog.getText(None, self.tr("create_profile"), "Profile Name:")
-        if ok and name:
-            self.core.config.create_profile(name)
-            self.switch_profile(name)
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, QFrame, QWidget, QGraphicsDropShadowEffect
+        from PyQt6.QtCore import Qt
+        from PyQt6.QtGui import QIcon, QColor
+        import os
+        
+        dialog = QDialog()
+        dialog.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
+        dialog.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        dialog.resize(320, 180)
+        
+        shadow = QGraphicsDropShadowEffect(dialog)
+        shadow.setBlurRadius(20)
+        shadow.setXOffset(0)
+        shadow.setYOffset(4)
+        shadow.setColor(QColor(0, 0, 0, 150))
+        
+        container = QFrame(dialog)
+        container.setObjectName("SettingsContainer")
+        container.setStyleSheet("QFrame#SettingsContainer { background-color: #1e1e24; border: 1px solid #3f414d; border-radius: 8px; }")
+        container.setGraphicsEffect(shadow)
+        
+        main_layout = QVBoxLayout(dialog)
+        main_layout.setContentsMargins(15, 15, 15, 15)
+        main_layout.addWidget(container)
+        
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Header
+        header = QFrame(container)
+        header.setStyleSheet("background-color: #262831; border-top-left-radius: 8px; border-top-right-radius: 8px;")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(15, 10, 15, 10)
+        
+        icon_label = QLabel()
+        icon_path = os.path.join(os.path.dirname(__file__), "..", "resources", "icons", "nestly_icon.png")
+        icon_label.setPixmap(QIcon(icon_path).pixmap(20, 20))
+        
+        title_label = QLabel(self.tr("create_profile"))
+        title_label.setStyleSheet("font-weight: bold; font-size: 14px; color: #ffffff;")
+        
+        close_btn = QPushButton("✕")
+        close_btn.setObjectName("closeBtn")
+        close_btn.setFixedSize(24, 24)
+        close_btn.setStyleSheet("QPushButton#closeBtn { background: transparent; border: none; font-size: 14px; color: #a0a0a0; } QPushButton#closeBtn:hover { color: #ff4747; background: rgba(255, 71, 71, 0.1); border-radius: 4px; }")
+        close_btn.clicked.connect(dialog.reject)
+        
+        header_layout.addWidget(icon_label)
+        header_layout.addWidget(title_label)
+        header_layout.addStretch()
+        header_layout.addWidget(close_btn)
+        layout.addWidget(header)
+        
+        sep = QFrame()
+        sep.setFixedHeight(1)
+        sep.setStyleSheet("background-color: #3f414d;")
+        layout.addWidget(sep)
+        
+        # Body
+        body_widget = QWidget()
+        body_layout = QVBoxLayout(body_widget)
+        body_layout.setContentsMargins(20, 20, 20, 20)
+        
+        input_label = QLabel("Profile Name:")
+        input_field = QLineEdit()
+        input_field.setPlaceholderText("Введите название профиля")
+        body_layout.addWidget(input_label)
+        body_layout.addWidget(input_field)
+        layout.addWidget(body_widget)
+        
+        # Footer
+        footer = QFrame()
+        footer.setStyleSheet("background-color: #262831; border-bottom-left-radius: 8px; border-bottom-right-radius: 8px;")
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(20, 15, 20, 15)
+        
+        btn_ok = QPushButton("OK")
+        btn_ok.setObjectName("primaryBtn")
+        btn_cancel = QPushButton("Cancel")
+        
+        footer_layout.addStretch()
+        footer_layout.addWidget(btn_cancel)
+        footer_layout.addWidget(btn_ok)
+        layout.addWidget(footer)
+        
+        btn_ok.clicked.connect(dialog.accept)
+        btn_cancel.clicked.connect(dialog.reject)
+        
+        # Dragging logic
+        drag_pos = [None]
+        def mousePressEvent(event):
+            if event.button() == Qt.MouseButton.LeftButton and header.geometry().contains(event.pos()):
+                drag_pos[0] = event.globalPosition().toPoint() - dialog.frameGeometry().topLeft()
+        def mouseMoveEvent(event):
+            if event.buttons() == Qt.MouseButton.LeftButton and drag_pos[0]:
+                dialog.move(event.globalPosition().toPoint() - drag_pos[0])
+        def mouseReleaseEvent(event):
+            drag_pos[0] = None
+            
+        dialog.mousePressEvent = mousePressEvent
+        dialog.mouseMoveEvent = mouseMoveEvent
+        dialog.mouseReleaseEvent = mouseReleaseEvent
+
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            name = input_field.text().strip()
+            if name:
+                self.core.config.create_profile(name)
+                self.switch_profile(name)
 
     def switch_profile(self, profile_name):
         self.core.config.set_current_profile(profile_name)
