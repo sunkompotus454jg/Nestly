@@ -23,7 +23,7 @@ class UIManager:
     def setup_tray(self):
         from ui.settings_window import SettingsWindow
         self.tray = QSystemTrayIcon()
-        self.tray.setIcon(QIcon("resources/icons/icoc.ico"))
+        self.tray.setIcon(QIcon("resources/icons/nestly_icon.png"))
         
         self.tray_menu = QMenu()
         self.action_create = self.tray_menu.addAction(self.tr("tray_create"))
