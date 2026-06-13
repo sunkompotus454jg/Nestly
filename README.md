@@ -1,5 +1,7 @@
 # Nestly
 
+[English](README.md) | [Українська](README.uk.md)
+
 Nestly is a premium, lightweight, and modern desktop organization tool for Windows. It allows you to group your shortcuts, files, and folders into customizable grids (fences) directly on your desktop, helping you maintain a clean and organized workspace.
 
 ## Features
