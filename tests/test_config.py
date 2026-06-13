@@ -7,21 +7,21 @@ import core.config
 @pytest.fixture
 def temp_config_file(tmp_path, monkeypatch):
     """Fixture to set up a temporary config file for testing."""
-    test_dir = tmp_path / "MyFencesData"
+    test_dir = tmp_path / "NestlyData"
     test_dir.mkdir()
-    test_config_path = test_dir / "fences_config.json"
+    test_config_path = test_dir / "nestly_config.json"
     
     # Mock paths in core.config
-    monkeypatch.setattr(core.config, "MYFENCES_DIR", str(test_dir))
+    monkeypatch.setattr(core.config, "NESTLY_DIR", str(test_dir))
     monkeypatch.setattr(core.config, "CONFIG_FILE", str(test_config_path))
     
     return test_config_path
 
 def test_initialization(temp_config_file):
     manager = ConfigManager()
-    assert manager.config_data["version"] == 1
-    assert manager.config_data["fences"] == []
-    assert manager.config_data["custom_themes"] == {}
+    assert manager.config_data["version"] == 2
+    assert manager.get_fences() == []
+    assert "default" in manager.get_profiles()
 
 def test_add_fence(temp_config_file):
     manager = ConfigManager()
@@ -33,8 +33,8 @@ def test_add_fence(temp_config_file):
     # Verify it saves to disk
     with open(temp_config_file, "r", encoding="utf-8") as f:
         data = json.load(f)
-    assert len(data["fences"]) == 1
-    assert data["fences"][0]["id"] == "test1"
+    assert len(data["profiles"]["default"]["fences"]) == 1
+    assert data["profiles"]["default"]["fences"][0]["id"] == "test1"
 
 def test_remove_fence(temp_config_file):
     manager = ConfigManager()

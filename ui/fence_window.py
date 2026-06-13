@@ -152,11 +152,38 @@ class FenceInstance(QWidget):
         self.apply_theme(self.current_theme)
         self.show()
 
+    def toggle_search(self):
+        visible = not self.search_input.isVisible()
+        if visible:
+            self.search_input.setVisible(True)
+            self.search_input.setFocus()
+            self.anim = QPropertyAnimation(self.search_input, b"maximumWidth")
+            self.anim.setDuration(200)
+            self.anim.setStartValue(0)
+            self.anim.setEndValue(120)
+            self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
+            self.anim.start()
+        else:
+            self.anim = QPropertyAnimation(self.search_input, b"maximumWidth")
+            self.anim.setDuration(200)
+            self.anim.setStartValue(self.search_input.width())
+            self.anim.setEndValue(0)
+            self.anim.setEasingCurve(QEasingCurve.Type.InCubic)
+            self.anim.finished.connect(lambda: self.search_input.setVisible(False))
+            self.anim.finished.connect(self.search_input.clear)
+            self.anim.start()
+
     def apply_search(self, text):
+        # Improve filter matching case-insensitively
         if text:
             self.model.setNameFilters([f"*{text}*"])
         else:
-            self.model.setNameFilters([]) 
+            self.model.setNameFilters([])
+
+    def tr(self, key, **kwargs):
+        if self.ui_manager and self.ui_manager.i18n:
+            return self.ui_manager.i18n.tr(key, **kwargs)
+        return key 
 
     def on_directory_loaded(self, path):
         if os.path.normpath(path) == os.path.normpath(self.target_path):

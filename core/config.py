@@ -2,51 +2,84 @@ import os
 import json
 
 USER_ROOT = os.path.expanduser("~")
-MYFENCES_DIR = os.path.join(USER_ROOT, "MyFencesData")
-CONFIG_FILE = os.path.join(MYFENCES_DIR, "fences_config.json")
+NESTLY_DIR = os.path.join(USER_ROOT, "NestlyData")
+CONFIG_FILE = os.path.join(NESTLY_DIR, "nestly_config.json")
 
 class ConfigManager:
     def __init__(self):
-        self.config_data = {"version": 1, "fences": [], "custom_themes": {}}
-        os.makedirs(MYFENCES_DIR, exist_ok=True)
+        self.config_data = {
+            "version": 2, 
+            "current_profile": "default",
+            "profiles": {
+                "default": {"name": "Default", "fences": []}
+            },
+            "custom_themes": {}
+        }
+        os.makedirs(NESTLY_DIR, exist_ok=True)
         self.load_config()
+        self.migrate_config()
+
+    def migrate_config(self):
+        if "fences" in self.config_data:
+            # Migrate from v1
+            self.config_data["profiles"]["default"]["fences"] = self.config_data.pop("fences")
+            self.config_data["version"] = 2
+            self.save_config()
 
     def load_config(self):
         if os.path.exists(CONFIG_FILE):
             try:
-                with open(CONFIG_FILE, 'r', encoding='utf-8') as f:
+                with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if "version" not in data:
-                        data["version"] = 1
-                    if "fences" not in data:
-                        data["fences"] = []
-                    if "custom_themes" not in data:
-                        data["custom_themes"] = {}
-                    self.config_data = data
+                    self.config_data.update(data)
             except Exception as e:
-                print(f"Failed to load config: {e}")
+                print(f"Error loading config: {e}")
 
     def save_config(self):
         try:
-            with open(CONFIG_FILE, 'w', encoding='utf-8') as f:
-                json.dump(self.config_data, f, ensure_ascii=False, indent=4)
+            with open(CONFIG_FILE, "w", encoding="utf-8") as f:
+                json.dump(self.config_data, f, indent=4, ensure_ascii=False)
         except Exception as e:
-            print(f"Failed to save config: {e}")
+            print(f"Error saving config: {e}")
+
+    def get_current_profile(self):
+        return self.config_data.get("current_profile", "default")
+
+    def get_profiles(self):
+        return list(self.config_data["profiles"].keys())
+
+    def create_profile(self, profile_name):
+        if profile_name not in self.config_data["profiles"]:
+            self.config_data["profiles"][profile_name] = {"name": profile_name, "fences": []}
+            self.save_config()
+
+    def set_current_profile(self, profile_name):
+        if profile_name in self.config_data["profiles"]:
+            self.config_data["current_profile"] = profile_name
+            self.save_config()
 
     def get_fences(self):
-        return self.config_data.get("fences", [])
+        profile = self.get_current_profile()
+        return self.config_data["profiles"].get(profile, {}).get("fences", [])
         
     def add_fence(self, fence_cfg):
-        self.config_data["fences"].append(fence_cfg)
+        profile = self.get_current_profile()
+        if "fences" not in self.config_data["profiles"][profile]:
+            self.config_data["profiles"][profile]["fences"] = []
+        self.config_data["profiles"][profile]["fences"].append(fence_cfg)
         self.save_config()
         
     def remove_fence(self, fence_id):
-        self.config_data["fences"] = [f for f in self.config_data["fences"] if f["id"] != fence_id]
+        profile = self.get_current_profile()
+        fences = self.config_data["profiles"].get(profile, {}).get("fences", [])
+        self.config_data["profiles"][profile]["fences"] = [f for f in fences if f["id"] != fence_id]
         self.save_config()
 
     def update_fence(self, fence_id, updates):
         """Updates multiple keys for a specific fence and saves config."""
-        for f in self.config_data["fences"]:
+        profile = self.get_current_profile()
+        fences = self.config_data["profiles"].get(profile, {}).get("fences", [])
+        for f in fences:
             if f["id"] == fence_id:
                 f.update(updates)
                 self.save_config()

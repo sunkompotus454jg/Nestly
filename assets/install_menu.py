@@ -8,11 +8,11 @@ def add_to_context_menu():
     command = f'"{python_exe}" "{script_path}" --create'
     
   
-    key_path = r"Directory\Background\shell\MyFences"
+    key_path = r"Directory\Background\shell\Nestly"
     
     try:
         key = winreg.CreateKey(winreg.HKEY_CLASSES_ROOT, key_path)
-        winreg.SetValue(key, "", winreg.REG_SZ, "🟦 Создать Сетку (Fences)")
+        winreg.SetValue(key, "", winreg.REG_SZ, "Создать Сетку (Nestly)")
         winreg.SetValueEx(key, "Icon", 0, winreg.REG_SZ, "explorer.exe") # Иконка папки
         command_key = winreg.CreateKey(key, "command")
         winreg.SetValue(command_key, "", winreg.REG_SZ, command)

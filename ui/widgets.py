@@ -79,7 +79,7 @@ class CustomThemeDialog(QDialog):
         super().__init__(parent)
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setFixedSize(380, 420)
+        self.setFixedSize(380, 480)
         
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -122,6 +122,17 @@ class CustomThemeDialog(QDialog):
         body_layout.addWidget(self.body_input)
         body_layout.addWidget(self.body_btn)
         c_layout.addLayout(body_layout)
+        
+        # Opacity Slider
+        from PyQt6.QtWidgets import QSlider
+        self.opacity_label = QLabel("Прозрачность (Opacity): 100%")
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setRange(10, 100)
+        self.opacity_slider.setValue(100)
+        self.opacity_slider.valueChanged.connect(lambda v: self.opacity_label.setText(f"Прозрачность (Opacity): {v}%"))
+        c_layout.addWidget(self.opacity_label)
+        c_layout.addWidget(self.opacity_slider)
+
 
         c_layout.addWidget(QLabel("Превью:"))
         self.preview_frame = QFrame()
@@ -203,13 +214,16 @@ class CustomThemeDialog(QDialog):
         body_hex = c_body.name(QColor.NameFormat.HexArgb)
         title_hex = c_title.name(QColor.NameFormat.HexArgb)
         
-        if c_body.alpha() <= 10:
-            bg_hex = body_hex
-        else:
-            c_bg = c_body.darker(110)
-            bg_hex = c_bg.name(QColor.NameFormat.HexArgb)
-            
-        return {"name": name, "border": border_hex, "bg": bg_hex, "body": body_hex, "title": title_hex}
+        opacity = self.opacity_slider.value() / 100.0
+        
+        return {
+            "name": name,
+            "border": border_hex,
+            "bg": body_hex,
+            "body": body_hex,
+            "title": title_hex,
+            "opacity": opacity
+        }
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton: self.drag_pos = event.globalPosition().toPoint() - self.frameGeometry().topLeft()

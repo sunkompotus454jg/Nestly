@@ -8,10 +8,10 @@ import os
 
 @pytest.fixture
 def temp_config_file(tmp_path, monkeypatch):
-    test_dir = tmp_path / "MyFencesData"
+    test_dir = tmp_path / "NestlyData"
     test_dir.mkdir()
-    test_config_path = test_dir / "fences_config.json"
-    monkeypatch.setattr(core.config, "MYFENCES_DIR", str(test_dir))
+    test_config_path = test_dir / "nestly_config.json"
+    monkeypatch.setattr(core.config, "NESTLY_DIR", str(test_dir))
     monkeypatch.setattr(core.config, "CONFIG_FILE", str(test_config_path))
     return test_config_path
 

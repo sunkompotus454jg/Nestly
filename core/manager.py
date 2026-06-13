@@ -1,13 +1,14 @@
 import os
 import uuid
 import shutil
-from core.config import MYFENCES_DIR
+from core.config import NESTLY_DIR
 
 class FenceManager:
     """Manages the logic and state of Fences, completely decoupled from UI."""
-    def __init__(self, config_manager, theme_manager):
+    def __init__(self, config_manager, theme_manager, i18n_manager=None):
         self.config = config_manager
         self.themes = theme_manager
+        self.i18n = i18n_manager
         
         self.on_fence_created = None
         self.on_fence_deleted = None
@@ -23,7 +24,7 @@ class FenceManager:
 
     def create_new_fence(self):
         new_id = f"fence_{uuid.uuid4().hex[:6]}"
-        new_folder_path = os.path.join(MYFENCES_DIR, new_id)
+        new_folder_path = os.path.join(NESTLY_DIR, new_id)
         os.makedirs(new_folder_path, exist_ok=True)
 
         new_config = {
