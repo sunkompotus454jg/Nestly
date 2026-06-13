@@ -391,7 +391,7 @@ class FenceInstance(QWidget):
         search_action.triggered.connect(self.toggle_search)
         menu.addSeparator()
 
-        color_menu = ThemeMenu("Цвет этого окна", self.ui_manager)
+        color_menu = ThemeMenu("Цвет этого окна", self.ui_manager, self)
         color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
             display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
@@ -404,7 +404,7 @@ class FenceInstance(QWidget):
         custom_action.triggered.connect(lambda: self.prompt_custom_theme(apply_globally=False))
         menu.addMenu(color_menu)
 
-        global_color_menu = ThemeMenu("Цвет всех окон", self.ui_manager)
+        global_color_menu = ThemeMenu("Цвет всех окон", self.ui_manager, self)
         global_color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
             display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]

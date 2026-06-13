@@ -233,9 +233,9 @@ class CustomThemeDialog(QDialog):
         self.drag_pos = None
 
 class ThemeMenu(QMenu):
-    def __init__(self, title, parent_window):
-        super().__init__(title, parent_window)
-        self.parent_window = parent_window 
+    def __init__(self, title, ui_manager, parent=None):
+        super().__init__(title, parent)
+        self.ui_manager = ui_manager 
         
     def mouseReleaseEvent(self, event):
         action = self.actionAt(event.pos())
@@ -243,11 +243,12 @@ class ThemeMenu(QMenu):
             theme_key = action.data()
             if theme_key and str(theme_key).startswith("Custom_"):
                 # We need to call a method on the app to handle this
-                if hasattr(self.parent_window, "remove_custom_theme"):
-                    self.parent_window.remove_custom_theme(theme_key)
+                if hasattr(self.ui_manager, "remove_custom_theme"):
+                    self.ui_manager.remove_custom_theme(theme_key)
                 self.removeAction(action)
                 self.close() 
                 return
+        super().mouseReleaseEvent(event)
         super().mouseReleaseEvent(event)
 
 class ResizeHandle(QWidget):
