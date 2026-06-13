@@ -4,7 +4,7 @@ pip install pyinstaller pillow
 
 echo.
 echo Building Nestly.exe...
-python -m PyInstaller --noconsole --onefile --icon=resources/icons/nestly_icon.ico --name=Nestly main.py
+python -m PyInstaller --clean --noconsole --onefile --icon=resources/icons/nestly_icon.ico --name=Nestly main.py
 
 echo.
 echo ========================================================
