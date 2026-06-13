@@ -308,6 +308,7 @@ class FenceInstance(QWidget):
 
         if selected_indexes:
             file_menu = QMenu(self)
+            file_menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             file_menu.setStyleSheet(menu_style)
             
             count = len(selected_indexes)
@@ -362,14 +363,15 @@ class FenceInstance(QWidget):
             return
 
         menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setStyleSheet(menu_style)
         
-        manage_menu = QMenu("Управление сетками", self)
+        manage_menu = QMenu("Управление сетками", menu)
         manage_menu.setStyleSheet(menu_style)
         
         for f in self.ui_manager.get_all_windows():
             fence_title = f.title_edit.text()
-            f_menu = QMenu(fence_title, self)
+            f_menu = QMenu(fence_title, manage_menu)
             f_menu.setStyleSheet(menu_style)
             
             del_fence_action = f_menu.addAction("Удалить эту сетку")
@@ -391,7 +393,7 @@ class FenceInstance(QWidget):
         search_action.triggered.connect(self.toggle_search)
         menu.addSeparator()
 
-        color_menu = ThemeMenu("Цвет этого окна", self.ui_manager, self)
+        color_menu = ThemeMenu("Цвет этого окна", self.ui_manager, menu)
         color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
             display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
@@ -404,7 +406,7 @@ class FenceInstance(QWidget):
         custom_action.triggered.connect(lambda: self.prompt_custom_theme(apply_globally=False))
         menu.addMenu(color_menu)
 
-        global_color_menu = ThemeMenu("Цвет всех окон", self.ui_manager, self)
+        global_color_menu = ThemeMenu("Цвет всех окон", self.ui_manager, menu)
         global_color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
             display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
