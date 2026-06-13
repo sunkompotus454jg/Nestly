@@ -276,6 +276,13 @@ class FenceInstance(QWidget):
         self.ui_manager.update_fence_config(self.id, {"locked": self.is_locked})
 
     def show_context_menu(self, pos):
+        self.context_menu_open = True
+        try:
+            self._show_context_menu_impl(pos)
+        finally:
+            self.context_menu_open = False
+            
+    def _show_context_menu_impl(self, pos):
         index = self.list_view.indexAt(pos) 
         selected_indexes = self.list_view.selectionModel().selectedIndexes()
         
@@ -421,6 +428,7 @@ class FenceInstance(QWidget):
         self.resizer.move(self.width() - 20, self.height() - 20)
 
     def check_mouse(self):
+        if getattr(self, 'context_menu_open', False): return
         if self.title_edit.hasFocus() or self.search_input.hasFocus() or self.resizing or self.list_view.state() == QListView.State.EditingState: 
             return
 
