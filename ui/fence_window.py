@@ -126,6 +126,8 @@ class FenceInstance(QWidget):
         self.list_view.setModel(self.proxy_model) 
         
         self.model.directoryLoaded.connect(self.on_directory_loaded)
+        self.model.fileRenamed.connect(self.on_file_renamed)
+        self.model.rowsAboutToBeRemoved.connect(self.on_rows_removed)
         self.list_view.setRootIndex(self.proxy_model.mapFromSource(self.model.index(self.target_path)))
         
         # Pre-load icons right away so they're cached before user opens the fence
@@ -134,6 +136,7 @@ class FenceInstance(QWidget):
         self.list_view.doubleClicked.connect(self.open_file_double_click)
         self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.list_view.customContextMenuRequested.connect(self.show_context_menu)
+        self.list_view.orderChanged.connect(self.on_order_changed)
         
         b_layout.addWidget(self.search_input)
         b_layout.addWidget(self.list_view)
@@ -203,6 +206,30 @@ class FenceInstance(QWidget):
             "icons": self.config.get("icons", {}),
             "custom_order": self.proxy_model.custom_order
         })
+
+    def on_order_changed(self):
+        self.save_config_timer.start()
+
+    def on_file_renamed(self, path, old_name, new_name):
+        if old_name in self.proxy_model.custom_order:
+            idx = self.proxy_model.custom_order.index(old_name)
+            self.proxy_model.custom_order[idx] = new_name
+            self.proxy_model.set_custom_order(self.proxy_model.custom_order)
+            self.save_config_timer.start()
+
+    def on_rows_removed(self, parent, start, end):
+        if parent == self.model.index(self.target_path):
+            changed = False
+            new_order = list(self.proxy_model.custom_order)
+            for i in range(start, end + 1):
+                idx = self.model.index(i, 0, parent)
+                name = self.model.fileName(idx)
+                if name in new_order:
+                    new_order.remove(name)
+                    changed = True
+            if changed:
+                self.proxy_model.set_custom_order(new_order)
+                self.save_config_timer.start()
 
     def on_directory_loaded(self, path):
         if os.path.normpath(path) == os.path.normpath(self.target_path):

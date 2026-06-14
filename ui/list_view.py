@@ -2,9 +2,11 @@ import os
 import shutil
 import ctypes
 from PyQt6.QtWidgets import QListView
-from PyQt6.QtCore import Qt, QSize
+from PyQt6.QtCore import Qt, QSize, pyqtSignal
 
 class CustomListView(QListView):
+    orderChanged = pyqtSignal()
+    
     def __init__(self, target_path, parent=None):
         super().__init__(parent)
         self.target_path = target_path
@@ -50,6 +52,7 @@ class CustomListView(QListView):
         if event.mimeData().hasUrls():
             if event.source() == self:
                 super().dropEvent(event)
+                self.sync_order()
             else:
                 event.setDropAction(Qt.DropAction.MoveAction)
                 event.accept()
@@ -74,3 +77,23 @@ class CustomListView(QListView):
                         pass
         else:
             super().dropEvent(event)
+            
+    def sync_order(self):
+        model = self.model()
+        if not model: return
+        
+        root_idx = self.rootIndex()
+        items = []
+        for row in range(model.rowCount(root_idx)):
+            idx = model.index(row, 0, root_idx)
+            rect = self.visualRect(idx)
+            source_idx = model.mapToSource(idx)
+            name = model.sourceModel().fileName(source_idx)
+            # Use visual center Y, X for robust sorting when snapping is imprecise
+            items.append((rect.center().y(), rect.center().x(), name))
+            
+        items.sort(key=lambda item: (item[0], item[1]))
+        new_order = [item[2] for item in items]
+        
+        model.set_custom_order(new_order)
+        self.orderChanged.emit()
