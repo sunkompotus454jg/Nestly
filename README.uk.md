@@ -40,8 +40,8 @@ Nestly створено за допомогою Python 3 та PyQt6.
 ### Інструкції з налаштування
 1. Клонуйте репозиторій:
    ```bash
-   git clone https://github.com/sunkompotus454jg/MyFences.git
-   cd MyFences
+   git clone https://github.com/sunkompotus454jg/Nestly.git
+   cd Nestly
    ```
 2. Встановіть необхідні залежності:
    ```bash

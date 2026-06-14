@@ -40,8 +40,8 @@ Nestly is built using Python 3 and PyQt6.
 ### Setup Instructions
 1. Clone the repository:
    ```bash
-   git clone https://github.com/sunkompotus454jg/MyFences.git
-   cd MyFences
+   git clone https://github.com/sunkompotus454jg/Nestly.git
+   cd Nestly
    ```
 2. Install the required dependencies:
    ```bash
