@@ -125,7 +125,7 @@ def main():
 
     # If launched with --create and it was the first instance, maybe create one?
     # Actually, FenceManager creates one by default if none exist.
-    if "--create" in sys.argv and len(fence_manager.fence_configs) > 0:
+    if ("--create-fence" in sys.argv or "--create" in sys.argv) and len(fence_manager.fence_configs) > 0:
         fence_manager.create_new_fence()
 
     sys.exit(app.exec())

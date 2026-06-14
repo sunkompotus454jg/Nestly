@@ -206,6 +206,9 @@ class CustomThemeDialog(QDialog):
         c_body = QColor(body) if QColor(body).isValid() else QColor("#1a1a21")
         c_title = QColor(title) if QColor(title).isValid() else QColor("#ffffff")
         
+        opacity = self.opacity_slider.value() / 100.0
+        c_body.setAlphaF(c_body.alphaF() * opacity)
+        
         if c_border.alpha() < 3: c_border.setAlpha(3)
         if c_body.alpha() < 3: c_body.setAlpha(3)
         if c_title.alpha() < 3: c_title.setAlpha(3)
@@ -213,8 +216,6 @@ class CustomThemeDialog(QDialog):
         border_hex = c_border.name(QColor.NameFormat.HexArgb)
         body_hex = c_body.name(QColor.NameFormat.HexArgb)
         title_hex = c_title.name(QColor.NameFormat.HexArgb)
-        
-        opacity = self.opacity_slider.value() / 100.0
         
         return {
             "name": name,

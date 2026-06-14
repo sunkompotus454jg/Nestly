@@ -8,29 +8,38 @@ from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer, pyqtPrope
 
 from core.themes import qss, THEMES
 from ui.widgets import VectorSearchButton, CustomThemeDialog, ThemeMenu, ResizeHandle, BORDER_RADIUS
-from ui.file_model import CustomFileSystemModel, CustomIconProvider
+from ui.file_model import CustomFileSystemModel, CustomOrderProxyModel
 from ui.list_view import CustomListView
+
+def get_text_color(hex_bg):
+    c = QColor(hex_bg)
+    lum = 0.299 * c.redF() + 0.587 * c.greenF() + 0.114 * c.blueF()
+    return "black" if lum > 0.6 else "white"
 
 HEADER_HEIGHT = 35 
 
 class FenceInstance(QWidget):
+    # ── Animated property ──────────────────────────────────────────
+    # Only changes the MAIN WIDGET height during animation.
+    # body_frame stays at full_height — Qt clips it to the parent rect.
+    # This avoids expensive QListView relayouts on every animation frame.
     @pyqtProperty(int)
     def current_body_height(self):
-        return self.body_frame.maximumHeight()
+        return self._anim_height
 
     @current_body_height.setter
     def current_body_height(self, value):
-        self.body_frame.setMinimumHeight(value)
-        self.body_frame.setMaximumHeight(value)
+        self._anim_height = value
         self.setFixedHeight(HEADER_HEIGHT + value)
         
     def __init__(self, config, ui_manager):
         super().__init__()
         self.ui_manager = ui_manager
         self.config = config
+        self._anim_height = 0
         
         self.id = config.get("id", "default")
-        self.title = config.get("title", "Новая Сетка") 
+        self.title = config.get("title", self.tr("new_fence")) 
         
         raw_path = config.get("path", "")
         self.target_path = os.path.abspath(raw_path) if raw_path else os.getcwd()
@@ -91,31 +100,36 @@ class FenceInstance(QWidget):
 
         self.body_frame = QFrame()
         self.body_frame.setObjectName("BodyFrame")
-        self.body_frame.setMinimumHeight(0)
-        self.body_frame.setMaximumHeight(0)
+        # Start fully collapsed
+        self.body_frame.setFixedHeight(0)
         
         b_layout = QVBoxLayout(self.body_frame)
-        b_layout.setContentsMargins(5, 5, 5, 5)
+        b_layout.setContentsMargins(5, 0, 5, 5)
         
         self.search_input = QLineEdit()
-        self.search_input.setPlaceholderText("Поиск...")
+        self.search_input.setPlaceholderText(self.tr("search_placeholder"))
         self.search_input.hide()
         
-        self.model = CustomFileSystemModel()
+        self.model = CustomFileSystemModel(icon_cache_persist=self.config.get("icons", {}))
+        self.model.iconCacheUpdated.connect(self.on_icon_cache_updated)
         self.model.setRootPath(self.target_path)
         self.model.setReadOnly(False)
         self.model.setNameFilterDisables(False) 
-        
-        self.icon_provider = CustomIconProvider()
-        self.model.setIconProvider(self.icon_provider)
-        
+
         self.search_input.textChanged.connect(self.apply_search)
         
+        self.proxy_model = CustomOrderProxyModel(custom_order=self.config.get("custom_order", []))
+        self.proxy_model.setSourceModel(self.model)
+        self.proxy_model.sort(0)
+        
         self.list_view = CustomListView(self.target_path)
-        self.list_view.setModel(self.model) 
+        self.list_view.setModel(self.proxy_model) 
         
         self.model.directoryLoaded.connect(self.on_directory_loaded)
-        self.list_view.setRootIndex(self.model.index(self.target_path))
+        self.list_view.setRootIndex(self.proxy_model.mapFromSource(self.model.index(self.target_path)))
+        
+        # Pre-load icons right away so they're cached before user opens the fence
+        self.model.preload_icons(self.target_path)
 
         self.list_view.doubleClicked.connect(self.open_file_double_click)
         self.list_view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -130,16 +144,21 @@ class FenceInstance(QWidget):
         self.resizer = ResizeHandle(self, self)
 
         self.animation = QPropertyAnimation(self, b"current_body_height")
-        self.animation.setDuration(300)
+        self.animation.setDuration(150)
         self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         self.drag_pos = None
         self.resizing = False
         self.is_expanded = False
 
+        self.save_config_timer = QTimer()
+        self.save_config_timer.setSingleShot(True)
+        self.save_config_timer.setInterval(1000)
+        self.save_config_timer.timeout.connect(self.flush_config)
+
         self.timer = QTimer()
         self.timer.timeout.connect(self.check_mouse)
-        self.timer.start(50)
+        self.timer.start(150)  # 150ms — меньше CPU при многих панелях, отклик 100мс всё равно не виден
 
         self.header_frame.mousePressEvent = self.h_press
         self.header_frame.mouseMoveEvent = self.h_move
@@ -152,43 +171,7 @@ class FenceInstance(QWidget):
         self.apply_theme(self.current_theme)
         self.show()
 
-    def toggle_search(self):
-        visible = not self.search_input.isVisible()
-        if visible:
-            self.search_input.setVisible(True)
-            self.search_input.setFocus()
-            self.anim = QPropertyAnimation(self.search_input, b"maximumWidth")
-            self.anim.setDuration(200)
-            self.anim.setStartValue(0)
-            self.anim.setEndValue(120)
-            self.anim.setEasingCurve(QEasingCurve.Type.OutCubic)
-            self.anim.start()
-        else:
-            self.anim = QPropertyAnimation(self.search_input, b"maximumWidth")
-            self.anim.setDuration(200)
-            self.anim.setStartValue(self.search_input.width())
-            self.anim.setEndValue(0)
-            self.anim.setEasingCurve(QEasingCurve.Type.InCubic)
-            self.anim.finished.connect(lambda: self.search_input.setVisible(False))
-            self.anim.finished.connect(self.search_input.clear)
-            self.anim.start()
-
-    def apply_search(self, text):
-        # Improve filter matching case-insensitively
-        if text:
-            self.model.setNameFilters([f"*{text}*"])
-        else:
-            self.model.setNameFilters([])
-
-    def tr(self, key, **kwargs):
-        if self.ui_manager and self.ui_manager.i18n:
-            return self.ui_manager.i18n.tr(key, **kwargs)
-        return key 
-
-    def on_directory_loaded(self, path):
-        if os.path.normpath(path) == os.path.normpath(self.target_path):
-            self.list_view.setRootIndex(self.model.index(self.target_path))
-
+    # ── Search ─────────────────────────────────────────────────────
     def toggle_search(self):
         if self.search_input.isVisible():
             self.search_input.hide()
@@ -197,6 +180,50 @@ class FenceInstance(QWidget):
             self.search_input.show()
             self.search_input.setFocus()
 
+    def apply_search(self, text):
+        if text:
+            self.model.setNameFilters([f"*{text}*"])
+        else:
+            self.model.setNameFilters([])
+
+    # ── i18n ───────────────────────────────────────────────────────
+    def tr(self, key, **kwargs):
+        if self.ui_manager and self.ui_manager.i18n:
+            return self.ui_manager.i18n.tr(key, **kwargs)
+        return key 
+
+    # ── Icon cache ─────────────────────────────────────────────────
+    def on_icon_cache_updated(self, path, icon_path):
+        icons = self.config.setdefault("icons", {})
+        icons[path] = icon_path
+        self.save_config_timer.start()
+
+    def flush_config(self):
+        self.ui_manager.update_fence_config(self.id, {
+            "icons": self.config.get("icons", {}),
+            "custom_order": self.proxy_model.custom_order
+        })
+
+    def on_directory_loaded(self, path):
+        if os.path.normpath(path) == os.path.normpath(self.target_path):
+            self.list_view.setRootIndex(self.proxy_model.mapFromSource(self.model.index(self.target_path)))
+            
+            changed = False
+            root_idx = self.model.index(self.target_path)
+            for i in range(self.model.rowCount(root_idx)):
+                child = self.model.index(i, 0, root_idx)
+                name = self.model.fileName(child)
+                if self.proxy_model.append_if_missing(name):
+                    changed = True
+            if changed:
+                self.proxy_model.invalidate()
+                self.proxy_model.sort(0)
+                self.save_config_timer.start()
+            
+            # Pre-load icons for all .url files so they're ready before first expand
+            self.model.preload_icons(self.target_path)
+
+    # ── Theming ────────────────────────────────────────────────────
     def apply_theme(self, theme_key):
         all_themes = self.ui_manager.get_all_themes()
         if theme_key not in all_themes:
@@ -211,6 +238,13 @@ class FenceInstance(QWidget):
         bg_qss = qss(theme['bg'])
         body_qss = qss(theme['body'])
         title_qss = qss(theme.get('title', theme['border']))
+        
+        # Автоподбор цвета текста иконок от яркости фона тела панели
+        text_color = get_text_color(theme['body'])
+
+        # Apply opacity from theme (custom themes store opacity)
+        opacity = theme.get('opacity', 1.0)
+        self.setWindowOpacity(opacity)
 
         self.title_edit.setStyleSheet(f"color: {title_qss}; font-family: 'Segoe UI Variable', 'Segoe UI'; font-size: 14px; font-weight: bold; border: none; background: transparent;")
         self.resizer.setStyleSheet(f"background-color: transparent; border-bottom: 3px solid {border_qss}; border-right: 3px solid {border_qss}; border-bottom-right-radius: {BORDER_RADIUS}px;")
@@ -218,9 +252,9 @@ class FenceInstance(QWidget):
         self.search_btn.set_theme_color(theme.get('title', theme['border']))
         self.search_btn.update()
         
-        self.search_input.setStyleSheet(f"QLineEdit {{ background: {bg_qss}; color: white; border: 1px solid {border_qss}; border-radius: 4px; padding: 4px; font-family: 'Segoe UI'; font-size: 12px; margin-bottom: 4px; }}")
+        self.search_input.setStyleSheet(f"QLineEdit {{ background: {bg_qss}; color: {text_color}; border: 1px solid {border_qss}; border-radius: 4px; padding: 4px; font-family: 'Segoe UI'; font-size: 12px; margin-bottom: 4px; }}")
         
-        self.body_frame.setStyleSheet(f"QFrame#BodyFrame {{ background-color: {body_qss}; border: 2px solid {border_qss}; border-top: none; border-bottom-left-radius: {BORDER_RADIUS}px; border-bottom-right-radius: {BORDER_RADIUS}px; }} QListView {{ background: transparent; border: none; color: white; outline: none; selection-background-color: rgba(255,255,255, 30); }} QListView::item:selected {{ background: rgba(255,255,255, 30); border-radius: 5px; }} QListView QLineEdit {{ background: {bg_qss}; color: white; border: 1px solid {border_qss}; }}")
+        self.body_frame.setStyleSheet(f"QFrame#BodyFrame {{ background-color: {body_qss}; border: 2px solid {border_qss}; border-top: none; border-bottom-left-radius: {BORDER_RADIUS}px; border-bottom-right-radius: {BORDER_RADIUS}px; }} QListView {{ background: transparent; border: none; color: {text_color}; outline: none; selection-background-color: rgba(255,255,255, 30); }} QListView::item {{ color: {text_color}; }} QListView::item:selected {{ background: rgba(255,255,255, 30); border-radius: 5px; }} QListView QLineEdit {{ background: {bg_qss}; color: {text_color}; border: 1px solid {border_qss}; }}")
         
         self.set_header_style(expanded=self.is_expanded)
 
@@ -232,6 +266,7 @@ class FenceInstance(QWidget):
         bg_qss = qss(theme['bg'])
             
         if expanded:
+            # border-bottom: none removes the gap between header and body
             self.header_frame.setStyleSheet(f"QFrame#HeaderFrame {{ background-color: {bg_qss}; border: 2px solid {border_qss}; border-bottom: none; border-top-left-radius: {BORDER_RADIUS}px; border-top-right-radius: {BORDER_RADIUS}px; border-bottom-left-radius: 0px; border-bottom-right-radius: 0px; }}")
         else:
             self.header_frame.setStyleSheet(f"QFrame#HeaderFrame {{ background-color: {bg_qss}; border: 2px solid {border_qss}; border-radius: {BORDER_RADIUS}px; }}")
@@ -249,6 +284,7 @@ class FenceInstance(QWidget):
             if apply_globally: self.ui_manager.apply_global_theme(theme_id)
             else: self.apply_theme(theme_id)
 
+    # ── Layout helpers ─────────────────────────────────────────────
     def auto_fit_horizontal(self):
         if getattr(self, 'is_locked', False): return
         screen = QApplication.primaryScreen().availableGeometry()
@@ -275,6 +311,7 @@ class FenceInstance(QWidget):
         self.is_locked = not getattr(self, 'is_locked', False)
         self.ui_manager.update_fence_config(self.id, {"locked": self.is_locked})
 
+    # ── Context menu ───────────────────────────────────────────────
     def show_context_menu(self, pos):
         self.context_menu_open = True
         try:
@@ -304,69 +341,82 @@ class FenceInstance(QWidget):
         menu_bg_qss = qss(c_menu_bg.name(QColor.NameFormat.HexArgb))
         border_qss = qss(theme['border'])
         
-        menu_style = f"QMenu {{ background-color: {menu_bg_qss}; color: white; border: 1px solid {border_qss}; border-radius: 5px; font-family: 'Segoe UI'; font-size: 13px; }} QMenu::item {{ padding: 8px 20px; }} QMenu::item:selected {{ background-color: rgba(255, 255, 255, 20); }}"
+        # Автоподбор цвета текста меню от яркости фона
+        menu_lum = 0.299 * c_menu_bg.redF() + 0.587 * c_menu_bg.greenF() + 0.114 * c_menu_bg.blueF()
+        menu_text_color = "black" if menu_lum > 0.6 else "white"
+        menu_select_bg = "rgba(0, 0, 0, 20)" if menu_lum > 0.6 else "rgba(255, 255, 255, 20)"
+        
+        menu_style = f"QMenu {{ background-color: {menu_bg_qss}; color: {menu_text_color}; border: 1px solid {border_qss}; border-radius: 5px; font-family: 'Segoe UI'; font-size: 13px; }} QMenu::item {{ padding: 8px 20px; }} QMenu::item:selected {{ background-color: {menu_select_bg}; }}"
 
         if selected_indexes:
             file_menu = QMenu(self)
+            file_menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
             file_menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
             file_menu.setStyleSheet(menu_style)
             
             count = len(selected_indexes)
             
             if count == 1:
-                open_action = file_menu.addAction("Открыть")
-                run_admin_action = file_menu.addAction("Запуск от имени администратора")
-                rename_action = file_menu.addAction("Переименовать")
-                folder_action = file_menu.addAction("Показать в папке")
-                prop_action = file_menu.addAction("Свойства") 
+                open_action = file_menu.addAction(self.tr("open"))
+                run_admin_action = file_menu.addAction(self.tr("run_as_admin"))
+                rename_action = file_menu.addAction(self.tr("rename"))
+                folder_action = file_menu.addAction(self.tr("show_in_folder"))
+                prop_action = file_menu.addAction(self.tr("properties")) 
                 file_menu.addSeparator()
-                del_action = file_menu.addAction("Удалить файл")
+                del_action = file_menu.addAction(self.tr("delete_file"))
             else:
-                open_action = file_menu.addAction(f"Открыть ({count})")
+                open_action = file_menu.addAction(self.tr("open_count", count=count))
                 run_admin_action = None
                 rename_action = None
                 folder_action = None
                 prop_action = None
                 file_menu.addSeparator()
-                del_action = file_menu.addAction(f"Удалить выбранные ({count})")
+                del_action = file_menu.addAction(self.tr("delete_files", count=count))
 
             action = file_menu.exec(self.list_view.mapToGlobal(pos))
             
             if action == open_action:
                 for idx in selected_indexes:
-                    QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(idx)))
+                    source_idx = self.proxy_model.mapToSource(idx)
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(source_idx)))
                     
             elif action == run_admin_action and count == 1:
-                path = self.model.filePath(index)
+                source_idx = self.proxy_model.mapToSource(index)
+                path = self.model.filePath(source_idx)
                 ctypes.windll.shell32.ShellExecuteW(None, "runas", os.path.normpath(path), None, None, 1)
                     
             elif action == rename_action and count == 1:
                 self.list_view.edit(index)
                         
             elif action == folder_action and count == 1:
-                path = self.model.filePath(index)
+                source_idx = self.proxy_model.mapToSource(index)
+                path = self.model.filePath(source_idx)
                 os.system(f'explorer /select,"{os.path.normpath(path)}"')
                 
             elif action == prop_action and count == 1:
-                path = self.model.filePath(index)
+                source_idx = self.proxy_model.mapToSource(index)
+                path = self.model.filePath(source_idx)
                 ctypes.windll.shell32.ShellExecuteW(None, "properties", os.path.normpath(path), None, None, 1)
                 
             elif action == del_action:
-                msg = f"Вы уверены, что хотите удалить выбранные файлы ({count} шт.)?"
                 if count == 1:
-                    msg = f"Вы уверены, что хотите удалить '{self.model.fileName(index)}'?"
+                    source_idx = self.proxy_model.mapToSource(index)
+                    msg = self.tr("confirm_delete_file", name=self.model.fileName(source_idx))
+                else:
+                    msg = self.tr("confirm_delete_files", count=count)
                     
-                reply = QMessageBox.question(self, 'Подтверждение удаления', msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
+                reply = QMessageBox.question(self, self.tr("confirm_delete_title"), msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No)
                 if reply == QMessageBox.StandardButton.Yes:
                     for idx in selected_indexes:
-                        self.model.remove(idx)
+                        self.model.remove(self.proxy_model.mapToSource(idx))
             return
 
         menu = QMenu(self)
+        menu.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         menu.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         menu.setStyleSheet(menu_style)
         
-        manage_menu = QMenu("Управление сетками", menu)
+        manage_menu = QMenu(self.tr("manage_fences"), menu)
         manage_menu.setStyleSheet(menu_style)
         
         for f in self.ui_manager.get_all_windows():
@@ -374,7 +424,7 @@ class FenceInstance(QWidget):
             f_menu = QMenu(fence_title, manage_menu)
             f_menu.setStyleSheet(menu_style)
             
-            del_fence_action = f_menu.addAction("Удалить эту сетку")
+            del_fence_action = f_menu.addAction(self.tr("delete_fence"))
             del_fence_action.triggered.connect(lambda checked, target_fence=f: target_fence.delete_fence())
             
             manage_menu.addMenu(f_menu)
@@ -382,53 +432,55 @@ class FenceInstance(QWidget):
         menu.addMenu(manage_menu)
         menu.addSeparator()
         
-        lock_text = "Открепить сетку" if getattr(self, 'is_locked', False) else "Закрепить сетку"
+        lock_text = self.tr("unlock_fence") if getattr(self, 'is_locked', False) else self.tr("lock_fence")
         lock_action = menu.addAction(lock_text)
         lock_action.triggered.connect(self.toggle_lock)
         
-        fit_action = menu.addAction("Заполнить свободное место")
+        fit_action = menu.addAction(self.tr("auto_fit"))
         fit_action.triggered.connect(self.auto_fit_horizontal)
         
-        search_action = menu.addAction("Поиск иконок")
+        search_action = menu.addAction(self.tr("search_icons"))
         search_action.triggered.connect(self.toggle_search)
         menu.addSeparator()
 
-        color_menu = ThemeMenu("Цвет этого окна", self.ui_manager, menu)
+        color_menu = ThemeMenu(self.tr("color_this_window"), self.ui_manager, menu)
         color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
-            display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
+            display_name = data["name"] + " (" + self.tr("delete") + ")" if str(key).startswith("Custom_") else data["name"]
             action = color_menu.addAction(display_name)
             action.setData(key) 
             action.triggered.connect(lambda checked, k=key: self.apply_theme(k))
             
         color_menu.addSeparator()
-        custom_action = color_menu.addAction("Создать свой пресет...")
+        custom_action = color_menu.addAction(self.tr("create_custom_preset"))
         custom_action.triggered.connect(lambda: self.prompt_custom_theme(apply_globally=False))
         menu.addMenu(color_menu)
 
-        global_color_menu = ThemeMenu("Цвет всех окон", self.ui_manager, menu)
+        global_color_menu = ThemeMenu(self.tr("color_all_windows"), self.ui_manager, menu)
         global_color_menu.setStyleSheet(menu_style)
         for key, data in all_themes.items():
-            display_name = data["name"] + " (удалить)" if str(key).startswith("Custom_") else data["name"]
+            display_name = data["name"] + " (" + self.tr("delete") + ")" if str(key).startswith("Custom_") else data["name"]
             action = global_color_menu.addAction(display_name)
             action.setData(key)
             action.triggered.connect(lambda checked, k=key: self.ui_manager.apply_global_theme(k))
             
         global_color_menu.addSeparator()
-        global_custom_action = global_color_menu.addAction("Создать свой пресет...")
+        global_custom_action = global_color_menu.addAction(self.tr("create_custom_preset"))
         global_custom_action.triggered.connect(lambda: self.prompt_custom_theme(apply_globally=True))
         menu.addMenu(global_color_menu)
 
         menu.addSeparator()
-        delete_action = menu.addAction("Удалить сетку")
+        delete_action = menu.addAction(self.tr("delete_all_fences"))
         delete_action.triggered.connect(self.delete_fence)
 
         menu.exec(self.list_view.mapToGlobal(pos))
 
+    # ── Resize / geometry ──────────────────────────────────────────
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.resizer.move(self.width() - 20, self.height() - 20)
 
+    # ── Expand / Collapse animation ───────────────────────────────
     def check_mouse(self):
         if getattr(self, 'context_menu_open', False): return
         if self.title_edit.hasFocus() or self.search_input.hasFocus() or self.resizing or self.list_view.state() == QListView.State.EditingState: 
@@ -445,10 +497,27 @@ class FenceInstance(QWidget):
             try: self.animation.finished.disconnect(self.on_collapse_finished)
             except: pass
             
+            # ── KEY PERFORMANCE FIX ──
+            # Set body_frame to full height ONCE before animation.
+            # QListView computes its layout ONE time here.
+            # During animation, only the main widget height changes —
+            # body_frame stays at full_height, clipped by the parent widget.
+            # This means ZERO QListView relayouts during the animation.
+            self.body_frame.setFixedHeight(self.full_height)
+            
             self.set_header_style(expanded=True)
-            self.animation.setStartValue(self.current_body_height)
+            
+            # Icons are pre-loaded in memory (extension cache + preload_icons),
+            # so data() returns instantly from dict lookups — no need to freeze updates.
+            # This keeps icons visible during the animation for a polished feel.
+            
+            # Disable updates during animation for smooth rendering
+            self.list_view.setUpdatesEnabled(False)
+            
+            self.animation.setStartValue(self._anim_height)
             self.animation.setEndValue(self.full_height)
             self.resizer.show()
+            self.animation.finished.connect(self.on_expand_finished)
             self.animation.start()
 
         elif not over_window and self.is_expanded:
@@ -462,17 +531,33 @@ class FenceInstance(QWidget):
             
             self.list_view.clearSelection()
             
-            self.animation.setStartValue(self.current_body_height)
+            try: self.animation.finished.disconnect(self.on_expand_finished)
+            except: pass
+            # Disable updates during animation
+            self.list_view.setUpdatesEnabled(False)
+            
+            self.animation.setStartValue(self._anim_height)
             self.animation.setEndValue(0)
             self.animation.finished.connect(self.on_collapse_finished)
             self.animation.start()
 
+    def on_expand_finished(self):
+        try: self.animation.finished.disconnect(self.on_expand_finished)
+        except: pass
+        self.list_view.setUpdatesEnabled(True)
+        self.list_view.viewport().update()
+
     def on_collapse_finished(self):
         try: self.animation.finished.disconnect(self.on_collapse_finished)
         except: pass
-        if self.current_body_height == 0:
+        self.list_view.setUpdatesEnabled(True)
+        self.list_view.viewport().update()
+        if self._anim_height == 0:
+            # Collapse body_frame to 0 — frees QListView from painting
+            self.body_frame.setFixedHeight(0)
             self.set_header_style(expanded=False)
 
+    # ── Manual resize (drag handle) ───────────────────────────────
     def start_resizing(self, global_pos):
         if getattr(self, 'is_locked', False): return
         self.resizing = True
@@ -489,16 +574,20 @@ class FenceInstance(QWidget):
         
         self.setFixedWidth(new_width)
         self.full_height = new_height
-        self.current_body_height = new_height
+        # During manual resize, update BOTH body_frame and main widget
+        self.body_frame.setFixedHeight(new_height)
+        self._anim_height = new_height
+        self.setFixedHeight(HEADER_HEIGHT + new_height)
 
     def stop_resizing(self):
         self.resizing = False
         self.ui_manager.update_fence_config(self.id, {"width": self.width(), "height": self.full_height})
 
+    # ── Delete ─────────────────────────────────────────────────────
     def delete_fence(self):
         self.ui_manager.delete_fence(self.id)
-        # self.close() is called by the UIManager
 
+    # ── Snap to edges ──────────────────────────────────────────────
     def snap_to_edges(self, new_pos):
         snap_dist = 20
         new_rect = QRect(new_pos.x(), new_pos.y(), self.width(), self.height())
@@ -539,6 +628,7 @@ class FenceInstance(QWidget):
 
         return new_pos
 
+    # ── Header drag ────────────────────────────────────────────────
     def h_press(self, event):
         if getattr(self, 'is_locked', False): return 
         if event.button() == Qt.MouseButton.LeftButton:
@@ -556,6 +646,7 @@ class FenceInstance(QWidget):
             self.drag_pos = None
             self.ui_manager.update_fence_config(self.id, {"x": self.x(), "y": self.y()})
 
+    # ── Title edit ─────────────────────────────────────────────────
     def enable_edit(self, event):
         self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
         self.title_edit.setReadOnly(False)
@@ -570,5 +661,7 @@ class FenceInstance(QWidget):
         self.title_edit.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.ui_manager.update_fence_config(self.id, {"title": self.title_edit.text()})
 
+    # ── Open file ──────────────────────────────────────────────────
     def open_file_double_click(self, index):
-        QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(index)))
+        source_idx = self.proxy_model.mapToSource(index)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(self.model.filePath(source_idx)))

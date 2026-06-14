@@ -14,7 +14,7 @@ class IPCManager:
         socket.connectToServer(self.server_name)
         
         if socket.waitForConnected(500):
-            if "--create" in sys.argv:
+            if "--create-fence" in sys.argv or "--create" in sys.argv:
                 socket.write(b"CREATE_NEW")
                 socket.waitForBytesWritten(500)
             return True
